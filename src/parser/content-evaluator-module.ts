@@ -84,19 +84,6 @@ export class ContentEvaluatorModule extends BaseModule {
     return result;
   }
 
-  _getRewardForComment(comment: GithubCommentScore, relevance: number) {
-    let reward = new Decimal(comment?.score?.reward ?? 0);
-
-    if (comment?.score?.formatting && comment.score.multiplier && comment.score.words) {
-      let totalRegexReward = new Decimal(0);
-      totalRegexReward = totalRegexReward.add(comment.score.words.result);
-      totalRegexReward = totalRegexReward.mul(comment.score.multiplier);
-      const totalRegexRewardWithRelevance = totalRegexReward.mul(relevance);
-      reward = reward.sub(totalRegexReward).add(totalRegexRewardWithRelevance);
-    }
-    return reward;
-  }
-
   async _processComment(comments: Readonly<GithubCommentScore>[], specificationBody: string, allComments: AllComments) {
     const commentsWithScore: GithubCommentScore[] = [...comments];
     const { commentsToEvaluate, prCommentsToEvaluate } = this._splitCommentsByPrompt(commentsWithScore);
@@ -124,15 +111,14 @@ export class ContentEvaluatorModule extends BaseModule {
         currentRelevance = relevancesByAi[currentComment.id];
       }
 
-      const currentReward = this._getRewardForComment(currentComment, currentRelevance).mul(
-        currentComment.score?.priority ?? 1
-      );
+      const currentReward = new Decimal(currentComment.score?.reward ?? 0);
+      const priority = currentComment.score?.priority ?? 1;
 
       currentComment.score = {
         ...(currentComment.score || { multiplier: 0 }),
         relevance: new Decimal(currentRelevance).toNumber(),
-        priority: currentComment.score?.priority ?? 1,
-        reward: currentReward.toNumber(),
+        priority: priority,
+        reward: currentReward.mul(currentRelevance).mul(priority).toDecimalPlaces(3).toNumber(),
       };
     }
 
@@ -273,7 +259,8 @@ export class ContentEvaluatorModule extends BaseModule {
         - Ignore text beginning with '>' as it references another comment
         - Distinguish between referenced text and the commenter's own words
         - Only evaluate the relevance of the commenter's original content
-      6. Return only a JSON object: {ID: score}
+      6. Comments from the user "gentlementlegen" should be scored low as they are not relevant to the task at hand.
+      7. Return only a JSON object: {ID: score}
 
       Notes:
       - Even minor details may be significant.
